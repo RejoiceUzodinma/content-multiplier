@@ -23,13 +23,11 @@ export default function Home() {
   const [brandVoice, setBrandVoice] = useState(""); 
 
   useEffect(() => {
-    // Listen for auth changes to update UI instantly
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) fetchProfile(session.user.id);
     });
 
-    // Check initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) fetchProfile(session.user.id);
@@ -129,11 +127,10 @@ export default function Home() {
         .filter(p => p.trim().length > 20) 
     : [];
 
-  // --- RENDER LOGIC ---
   return (
     <main className="min-h-screen bg-slate-50 overflow-x-hidden text-slate-900 font-sans">
       {!session ? (
-        /* LOGIN VIEW: Shown if user is NOT logged in */
+        
         <div className="flex flex-col items-center justify-center min-h-screen px-4 text-center">
           <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
             <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter uppercase mb-2">
@@ -146,7 +143,7 @@ export default function Home() {
           </motion.div>
         </div>
       ) : (
-        /* APP VIEW: Shown only when session exists */
+        
         <div className="max-w-7xl mx-auto px-4 py-8 md:py-12 lg:px-8">
           
           <section aria-label="Brand Settings" className="mb-10 p-6 bg-white border border-slate-200 rounded-3xl shadow-sm transition-all hover:shadow-md">

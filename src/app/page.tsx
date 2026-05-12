@@ -10,11 +10,10 @@ import AuthModal from "@/components/AuthModal";
 export default function Home() {
   
   const [session, setSession] = useState<any>(null);
-
-  
   const [transcript, setTranscript] = useState("");
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
+  const [saveLoading, setSaveLoading] = useState(false); 
   const [type, setType] = useState("Individual");
   const [history, setHistory] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
@@ -23,7 +22,6 @@ export default function Home() {
   const [userName, setUserName] = useState("");
   const [userTitle, setUserTitle] = useState("");
   const [brandVoice, setBrandVoice] = useState(""); 
-
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -36,7 +34,6 @@ export default function Home() {
     if (savedHistory) setHistory(JSON.parse(savedHistory));
     if (savedBangers) setSavedPosts(JSON.parse(savedBangers));
   }, []);
-
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -52,28 +49,39 @@ export default function Home() {
     }
   };
 
+ 
   const handleSaveProfile = async () => {
-    console.log("Button clicked! Attempting save..."); 
-    const targetId = session?.user?.id || '00000000-0000-0000-0000-000000000000';
+    setSaveLoading(true);
+    try {
+   
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-    const { error } = await supabase
-      .from('profiles')
-      .upsert({
-        id: targetId,
-        full_name: userName,
-        professional_title: userTitle, 
-        brand_voice: brandVoice,
-      });
+      if (authError || !user) {
+        alert("Please sign in to save your progress.");
+        return;
+      }
 
-    if (error) {
-      console.error("Supabase Save Error:", error);
-      alert("Database Error: " + error.message);
-    } else {
-      alert("Brand Bible secured in the Cloud! 🏆");
+      const { error } = await supabase
+        .from('profiles')
+        .upsert({
+          id: user.id, 
+          full_name: userName, 
+          professional_title: userTitle, 
+          brand_voice: brandVoice,
+          updated_at: new Date().toISOString(),
+        });
+
+      if (error) throw error;
+      
+      alert("Profile saved successfully! 🏆");
+    } catch (error: any) {
+      console.error('Error saving:', error.message);
+      alert("Error saving profile: " + error.message);
+    } finally {
+      setSaveLoading(false);
     }
   };
 
-  
   const handleGenerate = async () => {
     if (!transcript.trim()) return alert("Please provide a transcript to begin.");
     setLoading(true);
@@ -116,12 +124,11 @@ export default function Home() {
         .filter(p => p.trim().length > 20) 
     : [];
 
-
   return (
     <main className="min-h-screen bg-slate-50 overflow-x-hidden text-slate-900 font-sans">
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-12 lg:px-8">
         
-        {/* BRAND IDENTITY SECTION */}
+       
         <section aria-label="Brand Settings" className="mb-10 p-6 bg-white border border-slate-200 rounded-3xl shadow-sm transition-all hover:shadow-md">
           <header className="flex items-center justify-between mb-6">
              <div className="flex items-center gap-3">
@@ -130,11 +137,13 @@ export default function Home() {
                 </div>
                 <h2 className="text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Personal Brand Bible</h2>
              </div>
+            
              <button 
                onClick={handleSaveProfile}
-               className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-full hover:bg-blue-600 transition-all"
+               disabled={saveLoading}
+               className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-full hover:bg-blue-600 transition-all disabled:opacity-50"
              >
-               SAVE TO CLOUD
+               {saveLoading ? "SAVING..." : "SAVE CHANGES"}
              </button>
           </header>
           

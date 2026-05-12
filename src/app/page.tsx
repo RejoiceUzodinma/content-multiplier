@@ -252,7 +252,20 @@ export default function Home() {
                 )}
               </div>
             </div>
-            <button onClick={() => supabase.auth.signOut()} className="w-full text-[10px] font-bold text-slate-400 hover:text-red-500 transition-all uppercase tracking-widest">Sign Out</button>
+            <button 
+  onClick={async () => {
+    console.log("Sign out triggered");
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      window.location.reload(); 
+    } else {
+      alert("Error signing out: " + error.message);
+    }
+  }} 
+  className="w-full py-4 text-[12px] font-black text-slate-500 hover:text-red-500 transition-all uppercase tracking-[0.2em] border-t border-slate-100 mt-4"
+>
+  Sign Out of Multiplier
+</button>
           </aside>
         </div>
       </div>

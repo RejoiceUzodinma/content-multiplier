@@ -4,7 +4,14 @@ import { motion, AnimatePresence } from "framer-motion";
 import PostCard from "@/components/PostCard";
 import { History, Star, Settings, Zap } from "lucide-react";
 
+import { supabase } from "../../lib/supabaseClient"; 
+import AuthModal from "@/components/AuthModal";
+
 export default function Home() {
+  
+  const [session, setSession] = useState<any>(null);
+
+  
   const [transcript, setTranscript] = useState("");
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,26 +24,56 @@ export default function Home() {
   const [userTitle, setUserTitle] = useState("");
   const [brandVoice, setBrandVoice] = useState(""); 
 
+
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) fetchProfile(session.user.id);
+    });
+
     const savedHistory = localStorage.getItem("content_vault");
     const savedBangers = localStorage.getItem("saved_bangers");
-    const savedName = localStorage.getItem("user_name");
-    const savedTitle = localStorage.getItem("user_title");
-    const savedVoice = localStorage.getItem("brand_voice");
-
     if (savedHistory) setHistory(JSON.parse(savedHistory));
     if (savedBangers) setSavedPosts(JSON.parse(savedBangers));
-    if (savedName) setUserName(savedName);
-    if (savedTitle) setUserTitle(savedTitle);
-    if (savedVoice) setBrandVoice(savedVoice);
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("user_name", userName);
-    localStorage.setItem("user_title", userTitle);
-    localStorage.setItem("brand_voice", brandVoice);
-  }, [userName, userTitle, brandVoice]);
 
+  const fetchProfile = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (data) {
+      setUserName(data.full_name || "");
+      setUserTitle(data.professional_title || "");
+      setBrandVoice(data.brand_voice || "");
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    console.log("Button clicked! Attempting save..."); 
+    const targetId = session?.user?.id || '00000000-0000-0000-0000-000000000000';
+
+    const { error } = await supabase
+      .from('profiles')
+      .upsert({
+        id: targetId,
+        full_name: userName,
+        professional_title: userTitle, 
+        brand_voice: brandVoice,
+      });
+
+    if (error) {
+      console.error("Supabase Save Error:", error);
+      alert("Database Error: " + error.message);
+    } else {
+      alert("Brand Bible secured in the Cloud! 🏆");
+    }
+  };
+
+  
   const handleGenerate = async () => {
     if (!transcript.trim()) return alert("Please provide a transcript to begin.");
     setLoading(true);
@@ -79,38 +116,44 @@ export default function Home() {
         .filter(p => p.trim().length > 20) 
     : [];
 
+
   return (
     <main className="min-h-screen bg-slate-50 overflow-x-hidden text-slate-900 font-sans">
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-12 lg:px-8">
         
         {/* BRAND IDENTITY SECTION */}
         <section aria-label="Brand Settings" className="mb-10 p-6 bg-white border border-slate-200 rounded-3xl shadow-sm transition-all hover:shadow-md">
-          <header className="flex items-center gap-3 mb-6">
-             <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-blue-200 shadow-lg">
-               <Settings size={20} />
+          <header className="flex items-center justify-between mb-6">
+             <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-blue-600 text-white shadow-blue-200 shadow-lg">
+                  <Settings size={20} />
+                </div>
+                <h2 className="text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Personal Brand Bible</h2>
              </div>
-             <h2 className="text-sm font-black text-slate-800 uppercase tracking-[0.2em]">Personal Brand Bible</h2>
+             <button 
+               onClick={handleSaveProfile}
+               className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-full hover:bg-blue-600 transition-all"
+             >
+               SAVE TO CLOUD
+             </button>
           </header>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-4">
               <input 
-                id="userName" name="userName"
                 value={userName} onChange={(e) => setUserName(e.target.value)} 
                 placeholder="Your Full Name" 
                 className="w-full bg-slate-50 rounded-2xl p-4 text-sm font-medium border-2 border-transparent focus:border-blue-600 focus:bg-white outline-none transition-all shadow-inner" 
               />
               <input 
-                id="userTitle" name="userTitle"
                 value={userTitle} onChange={(e) => setUserTitle(e.target.value)} 
                 placeholder="Professional Title (e.g. Founder & CEO)" 
                 className="w-full bg-slate-50 rounded-2xl p-4 text-sm font-medium border-2 border-transparent focus:border-blue-600 focus:bg-white outline-none transition-all shadow-inner" 
               />
             </div>
             <textarea 
-              id="brandVoice" name="brandVoice"
               value={brandVoice} onChange={(e) => setBrandVoice(e.target.value)} 
-              placeholder="Describe your brand voice (e.g. witty, bold, academic...)" 
+              placeholder="Describe your brand voice..." 
               className="w-full bg-slate-50 rounded-2xl p-4 text-sm font-medium border-2 border-transparent focus:border-blue-600 focus:bg-white outline-none h-full min-h-[110px] resize-none transition-all shadow-inner" 
             />
           </div>
@@ -132,12 +175,9 @@ export default function Home() {
 
         {/* MAIN WORKSPACE */}
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-10">
-          
-          {/* INPUT & OUTPUT AREA */}
           <section className="lg:col-span-8 space-y-6">
             <div className="group relative">
               <textarea
-                id="transcriptInput" name="transcript"
                 className="w-full min-h-[350px] md:min-h-[500px] p-6 md:p-8 border-2 border-slate-200 rounded-[2.5rem] shadow-2xl bg-white/50 backdrop-blur-md focus:bg-white focus:border-blue-600 outline-none text-base md:text-lg text-slate-800 transition-all leading-relaxed"
                 placeholder="Paste your raw transcript or thoughts here..."
                 value={transcript}
@@ -173,15 +213,14 @@ export default function Home() {
             </div>
           </section>
 
-          {/* ASIDE AREA */}
           <aside className="lg:col-span-4 space-y-8 order-last lg:order-none">
             <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm sticky top-8">
               <nav className="flex gap-8 mb-8 border-b border-slate-100 pb-4">
                 <button onClick={() => setActiveTab("history")} className={`flex items-center gap-2 text-xs font-black uppercase tracking-widest pb-2 transition-all relative ${activeTab === 'history' ? 'text-blue-600' : 'text-slate-400'}`}>
-                   Vault {activeTab === 'history' && <motion.div layoutId="tab" className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-blue-600" />}
+                    Vault {activeTab === 'history' && <motion.div layoutId="tab" className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-blue-600" />}
                 </button>
                 <button onClick={() => setActiveTab("saved")} className={`flex items-center gap-2 text-xs font-black uppercase tracking-widest pb-2 transition-all relative ${activeTab === 'saved' ? 'text-amber-600' : 'text-slate-400'}`}>
-                   Curated {activeTab === 'saved' && <motion.div layoutId="tab" className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-amber-600" />}
+                    Curated {activeTab === 'saved' && <motion.div layoutId="tab" className="absolute bottom-[-1px] left-0 w-full h-0.5 bg-amber-600" />}
                 </button>
               </nav>
 
@@ -204,8 +243,8 @@ export default function Home() {
                 )}
               </div>
             </div>
+            <button onClick={() => supabase.auth.signOut()} className="w-full text-[10px] font-bold text-slate-400 hover:text-red-500 transition-all uppercase tracking-widest">Sign Out</button>
           </aside>
-
         </div>
       </div>
     </main>

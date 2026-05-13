@@ -96,6 +96,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      
       setResult(data.content);
       const newEntry = {
         id: Date.now(),
@@ -106,6 +107,27 @@ export default function Home() {
       const updatedHistory = [newEntry, ...history].slice(0, 10);
       setHistory(updatedHistory);
       localStorage.setItem("content_vault", JSON.stringify(updatedHistory));
+
+      
+      const wordCount = transcript.trim().split(/\s+/).length;
+
+      
+      if (session?.user?.id) {
+        const { error: logError } = await supabase
+          .from('usage_logs')
+          .insert([
+            { 
+              user_id: session.user.id, 
+              action_type: 'generate_content', 
+              input_word_count: wordCount,
+              platform_type: type 
+            }
+          ]);
+        
+        if (logError) console.error('Logging failed:', logError.message);
+      }
+     
+
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
@@ -130,7 +152,6 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-slate-50 overflow-x-hidden text-slate-900 font-sans">
       {!session ? (
-        
         <div className="flex flex-col items-center justify-center min-h-screen px-4 text-center">
           <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
             <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter uppercase mb-2">
@@ -143,9 +164,7 @@ export default function Home() {
           </motion.div>
         </div>
       ) : (
-        
         <div className="max-w-7xl mx-auto px-4 py-8 md:py-12 lg:px-8">
-          
           <section aria-label="Brand Settings" className="mb-10 p-6 bg-white border border-slate-200 rounded-3xl shadow-sm transition-all hover:shadow-md">
             <header className="flex items-center justify-between mb-6">
                <div className="flex items-center gap-3">

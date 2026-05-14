@@ -73,9 +73,9 @@ export default function Home() {
           updated_at: new Date().toISOString(),
         });
       if (error) throw error;
-      alert("Brand Bible updated! 🏆");
+      
     } catch (error: any) {
-      alert("Error saving: " + error.message);
+      console.error("Error saving:", error.message);
     } finally {
       setSaveLoading(false);
     }
@@ -165,7 +165,7 @@ export default function Home() {
                   </div>
                   <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Brand Bible</h2>
                </div>
-               <button onClick={handleSaveProfile} disabled={saveLoading} className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-full hover:bg-blue-600 disabled:opacity-50">
+               <button onClick={handleSaveProfile} disabled={saveLoading} className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-full hover:bg-blue-600 disabled:opacity-50 transition-colors">
                  {saveLoading ? "SAVING..." : "SAVE CHANGES"}
                </button>
             </header>

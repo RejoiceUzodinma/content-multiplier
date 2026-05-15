@@ -187,7 +187,7 @@ export default function Home() {
                 </div>
                 <textarea
                   className="w-full min-h-[150px] p-0 border-none outline-none text-lg text-slate-800 placeholder:text-slate-300 resize-none font-medium"
-                  placeholder="e.g. Finally finished a big project I've been working on, had a really deep conversation that changed my perspective or struggled with a client today..."
+                  placeholder="e.g. paste your raw thoughts, what you found out today or transcript..."
                   value={dailyStory}
                   onChange={(e) => setDailyStory(e.target.value)}
                 />

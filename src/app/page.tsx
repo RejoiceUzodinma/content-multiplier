@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import PostCard from "@/components/PostCard";
-import { History, Star, Settings, Zap, MessageSquare, Target } from "lucide-react";
+import { Settings, Zap, MessageSquare, Target } from "lucide-react";
 
 import { supabase } from "../../lib/supabaseClient"; 
 import AuthModal from "@/components/AuthModal";
@@ -14,6 +14,7 @@ export default function Home() {
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [saveLoading, setSaveLoading] = useState(false); 
+  const [isSaved, setIsSaved] = useState(false); 
   const [history, setHistory] = useState<any[]>([]);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"history" | "saved">("history");
@@ -55,7 +56,7 @@ export default function Home() {
     }
   };
 
-  const handleSaveProfile = async () => {
+  const handleSave = async () => {
     setSaveLoading(true);
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -72,7 +73,11 @@ export default function Home() {
           brand_voice: brandVoice,
           updated_at: new Date().toISOString(),
         });
+      
       if (error) throw error;
+
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
       
     } catch (error: any) {
       console.error("Error saving:", error.message);
@@ -82,7 +87,7 @@ export default function Home() {
   };
 
   const handleGenerate = async () => {
-    if (!dailyStory.trim()) return alert("What's the story today? Share a small detail first.");
+    if (!dailyStory.trim()) return alert("Paste a thought first!");
     setLoading(true);
     try {
       const res = await fetch("/api/generate", {
@@ -149,7 +154,7 @@ export default function Home() {
             <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter uppercase mb-2">
               Content <span className="text-blue-600">Multiplier</span>
             </h1>
-            <p className="mb-8 text-slate-500 font-medium">Original content powered by your daily grit.</p>
+            <p className="mb-8 text-slate-500 font-medium">Your insights, multiplied.</p>
             <div className="w-full max-w-md bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
               <AuthModal />
             </div>
@@ -165,9 +170,13 @@ export default function Home() {
                   </div>
                   <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Brand Bible</h2>
                </div>
-               <button onClick={handleSaveProfile} disabled={saveLoading} className="text-[10px] font-bold bg-slate-900 text-white px-4 py-2 rounded-full hover:bg-blue-600 disabled:opacity-50 transition-colors">
-                 {saveLoading ? "SAVING..." : "SAVE CHANGES"}
-               </button>
+               <button 
+                onClick={handleSave} 
+                disabled={saveLoading}
+                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isSaved ? 'bg-green-500 text-white' : 'bg-slate-900 text-white hover:bg-blue-600'}`}
+               >
+                {saveLoading ? "SAVING..." : isSaved ? "SAVED ✅" : "SAVE"}
+              </button>
             </header>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-4">
@@ -183,11 +192,11 @@ export default function Home() {
               <div className="bg-white p-8 rounded-[2.5rem] shadow-2xl border-2 border-slate-100">
                 <div className="flex items-center gap-2 mb-4 text-blue-600">
                    <MessageSquare size={18} />
-                   <label className="text-xs font-black uppercase tracking-widest">What's the story today?</label>
+                   <label className="text-xs font-black uppercase tracking-widest">What's on your mind?</label>
                 </div>
                 <textarea
                   className="w-full min-h-[150px] p-0 border-none outline-none text-lg text-slate-800 placeholder:text-slate-300 resize-none font-medium"
-                  placeholder="e.g. paste your raw thoughts, what you found out today or transcript..."
+                  placeholder="Paste a thought, a transcript, what happened today, or an observation..."
                   value={dailyStory}
                   onChange={(e) => setDailyStory(e.target.value)}
                 />
@@ -195,7 +204,7 @@ export default function Home() {
                 <div className="mt-6 pt-6 border-t border-slate-100">
                   <div className="flex items-center gap-2 mb-4 text-amber-600">
                     <Target size={18} />
-                    <label className="text-xs font-black uppercase tracking-widest">Choose one:</label>
+                    <label className="text-xs font-black uppercase tracking-widest">Choose your vibe:</label>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {[
@@ -250,7 +259,7 @@ export default function Home() {
                   {activeTab === "history" ? (
                     history.map((item) => (
                       <button key={item.id} onClick={() => setResult(item.content)} className="w-full text-left p-4 bg-slate-50 hover:bg-white rounded-xl border border-transparent hover:border-slate-200 transition-all">
-                        <p className="text-[10px] text-slate-500 line-clamp-2 italic italic">"{item.preview}"</p>
+                        <p className="text-[10px] text-slate-500 line-clamp-2 italic">"{item.preview}"</p>
                       </button>
                     ))
                   ) : (

@@ -1,8 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import PostCard from "@/components/PostCard";
-import { Settings, Zap, MessageSquare, Target } from "lucide-react";
+import { History, Star, Settings, Zap, MessageSquare, Target, Video, Mic, Square, Trash2, FileAudio } from "lucide-react";
 
 import { supabase } from "../../lib/supabaseClient"; 
 import AuthModal from "@/components/AuthModal";
@@ -23,6 +23,14 @@ export default function Home() {
   const [userTitle, setUserTitle] = useState("");
   const [brandVoice, setBrandVoice] = useState(""); 
 
+  // --- NEW MEDIA & RECORDING STATES ---
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<any>(null);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
@@ -39,7 +47,10 @@ export default function Home() {
     if (savedHistory) setHistory(JSON.parse(savedHistory));
     if (savedBangers) setSavedPosts(JSON.parse(savedBangers));
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, []);
 
   const fetchProfile = async (userId: string) => {
@@ -81,36 +92,113 @@ export default function Home() {
       
     } catch (error: any) {
       console.error("Error saving:", error.message);
+      alert("Error saving profile: " + error.message);
     } finally {
       setSaveLoading(false);
     }
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/wav" });
+        const generatedFile = new File([audioBlob], `live_record_${Date.now()}.wav`, { type: "audio/wav" });
+        setMediaFile(generatedFile);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+      timerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      alert("Microphone access denied or unsupported on this browser platform.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+  };
+
+  const formatDuration = (sec: number) => {
+    const mins = Math.floor(sec / 60);
+    const secs = sec % 60;
+    return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
+  };
+
   const handleGenerate = async () => {
-    if (!dailyStory.trim()) return alert("Paste a thought first!");
+    if (!dailyStory.trim() && !mediaFile) {
+      return alert("Please enter a text observation or upload/record a media file first!");
+    }
+
     setLoading(true);
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          transcript: dailyStory, 
-          type: "Content Multiplier", 
-          postGoal, 
-          userName, 
-          userTitle, 
-          brandVoice 
-        }),
-      });
+      let res;
+      
+      if (mediaFile) {
+        const formData = new FormData();
+        formData.append("file", mediaFile);
+        formData.append("brandVoice", brandVoice);
+        formData.append("userTitle", userTitle);
+        formData.append("userName", userName);
+        formData.append("postGoal", postGoal);
+
+        if (dailyStory.trim()) formData.append("textContext", dailyStory);
+
+        res = await fetch("/api/repurpose", {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            transcript: dailyStory, 
+            type: "Content Multiplier", 
+            postGoal, 
+            userName, 
+            userTitle, 
+            brandVoice 
+          }),
+        });
+      }
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || "Generation endpoint failure");
       
       setResult(data.content);
+      
+      const previewText = mediaFile 
+        ? `[Media] ${mediaFile.name}` 
+        : dailyStory.substring(0, 40) + "...";
+
       const newEntry = {
         id: Date.now(),
         content: data.content,
-        preview: dailyStory.substring(0, 40) + "..."
+        preview: previewText
       };
+      
       const updatedHistory = [newEntry, ...history].slice(0, 10);
       setHistory(updatedHistory);
       localStorage.setItem("content_vault", JSON.stringify(updatedHistory));
@@ -119,8 +207,8 @@ export default function Home() {
         await supabase.from('usage_logs').insert([
           { 
             user_id: session.user.id, 
-            action_type: 'content_multiplier_gen', 
-            input_word_count: dailyStory.trim().split(/\s+/).length,
+            action_type: mediaFile ? 'media_multiplier_gen' : 'content_multiplier_gen', 
+            input_word_count: dailyStory.trim() ? dailyStory.trim().split(/\s+/).length : 0,
             platform_type: postGoal 
           }
         ]);
@@ -142,7 +230,7 @@ export default function Home() {
   };
 
   const posts = result
-    ? result.split(/(?=\[LINKEDIN|\[INSTAGRAM|\[X POST|\[THREADS|\[CAROUSEL|\[REEL|### \*\*LinkedIn|### \*\*Instagram)/gi)
+    ? result.split(/(?=\[LINKEDIN|\[INSTAGRAM|\[X THREAD|### \*\*LinkedIn|### \*\*Instagram)/gi)
         .filter(p => p.trim().length > 20) 
     : [];
 
@@ -154,7 +242,9 @@ export default function Home() {
             <h1 className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter uppercase mb-2">
               Content <span className="text-blue-600">Multiplier</span>
             </h1>
-            <p className="mb-8 text-slate-500 font-medium">Your insights, multiplied.</p>
+            <p className="mb-8 text-slate-500 font-medium tracking-tight">
+              Your insights, multiplied.
+            </p>
             <div className="w-full max-w-md bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
               <AuthModal />
             </div>
@@ -195,11 +285,78 @@ export default function Home() {
                    <label className="text-xs font-black uppercase tracking-widest">What's on your mind?</label>
                 </div>
                 <textarea
-                  className="w-full min-h-[150px] p-0 border-none outline-none text-lg text-slate-800 placeholder:text-slate-300 resize-none font-medium"
+                  className="w-full min-h-[150px] p-0 border-none outline-none text-lg text-slate-800 placeholder:text-slate-300 resize-none font-medium mb-4"
                   placeholder="Paste a thought, a transcript, what happened today, or an observation..."
                   value={dailyStory}
                   onChange={(e) => setDailyStory(e.target.value)}
                 />
+                <div className="flex flex-wrap items-center gap-3 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  
+                  {/* Upload Video Input Field */}
+                  <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
+                    <Video size={16} />
+                    <span>Upload Video</span>
+                    <input 
+                      type="file" 
+                      accept="video/*" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) setMediaFile(e.target.files[0]);
+                      }} 
+                    />
+                  </label>
+
+                  {/* Upload Audio Note Input Field */}
+                  <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
+                    <FileAudio size={16} />
+                    <span>Upload Audio Note</span>
+                    <input 
+                      type="file" 
+                      accept="audio/*" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) setMediaFile(e.target.files[0]);
+                      }} 
+                    />
+                  </label>
+
+                  {/* Native Streaming Voice Recorder Toggle Button */}
+                  {!isRecording ? (
+                    <button 
+                      type="button"
+                      onClick={startRecording}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 text-red-600 rounded-xl hover:bg-red-100 transition-all text-xs font-bold"
+                    >
+                      <Mic size={16} />
+                      <span>Tap Mic to Speak</span>
+                    </button>
+                  ) : (
+                    <button 
+                      type="button"
+                      onClick={stopRecording}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-xl animate-pulse transition-all text-xs font-bold"
+                    >
+                      <Square size={16} />
+                      <span>Stop ({formatDuration(recordingDuration)})</span>
+                    </button>
+                  )}
+                </div>
+
+                {mediaFile && (
+                  <div className="flex items-center justify-between bg-blue-50 text-blue-700 p-4 rounded-xl text-xs font-bold mb-6 border border-blue-100">
+                    <div className="flex items-center gap-2">
+                      {mediaFile.type.startsWith("video/") ? <Video size={16} /> : <FileAudio size={16} />}
+                      <span className="truncate max-w-xs md:max-w-md">Attached: {mediaFile.name} ({(mediaFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                    </div>
+                    <button 
+                      onClick={() => setMediaFile(null)} 
+                      className="text-slate-400 hover:text-red-500 transition-all"
+                      title="Remove media file attachment"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )}
                 
                 <div className="mt-6 pt-6 border-t border-slate-100">
                   <div className="flex items-center gap-2 mb-4 text-amber-600">
@@ -224,7 +381,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <button onClick={handleGenerate} disabled={loading} className="w-full mt-8 py-5 rounded-2xl font-black text-white bg-blue-600 hover:bg-slate-900 shadow-xl uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3">
+                <button onClick={handleGenerate} disabled={loading || isRecording} className="w-full mt-8 py-5 rounded-2xl font-black text-white bg-blue-600 hover:bg-slate-900 shadow-xl uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-3">
                   {loading ? "Multiplication in progress..." : <><Zap size={20} /> Multiply My Influence</>}
                 </button>
               </div>

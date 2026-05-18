@@ -23,7 +23,6 @@ export default function Home() {
   const [userTitle, setUserTitle] = useState("");
   const [brandVoice, setBrandVoice] = useState(""); 
 
-  // --- NEW MEDIA & RECORDING STATES ---
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingDuration, setRecordingDuration] = useState(0);
@@ -216,7 +215,7 @@ export default function Home() {
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
-      setLoading(false);
+      loading && setLoading(false);
     }
   };
 
@@ -233,7 +232,6 @@ export default function Home() {
     ? result.split(/(?=\[LINKEDIN|\[INSTAGRAM|\[X THREAD|### \*\*LinkedIn|### \*\*Instagram)/gi)
         .filter(p => p.trim().length > 20) 
     : [];
-
   return (
     <main className="min-h-screen bg-slate-50 overflow-x-hidden text-slate-900 font-sans">
       {!session ? (
@@ -292,7 +290,7 @@ export default function Home() {
                 />
                 <div className="flex flex-wrap items-center gap-3 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   
-                  {/* Upload Video Input Field */}
+                  
                   <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
                     <Video size={16} />
                     <span>Upload Video</span>
@@ -306,7 +304,7 @@ export default function Home() {
                     />
                   </label>
 
-                  {/* Upload Audio Note Input Field */}
+                 
                   <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
                     <FileAudio size={16} />
                     <span>Upload Audio Note</span>
@@ -320,7 +318,6 @@ export default function Home() {
                     />
                   </label>
 
-                  {/* Native Streaming Voice Recorder Toggle Button */}
                   {!isRecording ? (
                     <button 
                       type="button"
@@ -343,14 +340,14 @@ export default function Home() {
                 </div>
 
                 {mediaFile && (
-                  <div className="flex items-center justify-between bg-blue-50 text-blue-700 p-4 rounded-xl text-xs font-bold mb-6 border border-blue-100">
-                    <div className="flex items-center gap-2">
-                      {mediaFile.type.startsWith("video/") ? <Video size={16} /> : <FileAudio size={16} />}
-                      <span className="truncate max-w-xs md:max-w-md">Attached: {mediaFile.name} ({(mediaFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                  <div className="w-full flex items-center justify-between gap-2 p-4 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold mb-6 border border-blue-100 overflow-hidden">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {mediaFile.type.startsWith("video/") ? <Video size={16} className="shrink-0" /> : <FileAudio size={16} className="shrink-0" />}
+                      <span className="truncate">Attached: {mediaFile.name} ({(mediaFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
                     </div>
                     <button 
                       onClick={() => setMediaFile(null)} 
-                      className="text-slate-400 hover:text-red-500 transition-all"
+                      className="text-slate-400 hover:text-red-500 transition-all shrink-0 p-1"
                       title="Remove media file attachment"
                     >
                       <Trash2 size={16} />

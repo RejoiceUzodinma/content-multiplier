@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import path from "path";
-import os from "os"; // Essential for cloud temp path resolution
+import os from "os";
 
 const apiKey = process.env.GEMINI_API_KEY_2 || "";
 const ai = new GoogleGenAI({ apiKey: apiKey });
@@ -24,37 +24,31 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    // 1. Cloud-Safe Temp Buffering using standard OS temp directory
     const buffer = Buffer.from(await file.arrayBuffer());
-    const tempDir = os.tmpdir(); // This is ALWAYS writable on Vercel/Cloud functions!
+    const tempDir = os.tmpdir();
     
-    // Create a safe, unique filename to prevent overwriting strings
     const safeFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
     const tempFilePath = path.join(tempDir, safeFileName);
     fs.writeFileSync(tempFilePath, buffer);
 
-    // 2. Identify and explicitly verify the Mime Type (Handles mobile web recording edge cases)
     let finalMimeType = file.type;
     if (!finalMimeType || finalMimeType === "audio/x-wav" || finalMimeType.includes("octet-stream")) {
       if (file.name.endsWith(".wav")) finalMimeType = "audio/wav";
       else if (file.name.endsWith(".mp3")) finalMimeType = "audio/mp3";
       else if (file.name.endsWith(".m4a")) finalMimeType = "audio/m4a";
       else if (file.name.endsWith(".mp4")) finalMimeType = "video/mp4";
-      else finalMimeType = "audio/wav"; // Default fallback match block
+      else finalMimeType = "audio/wav";
     }
 
-    // 3. Upload file safely to Gemini Files API
     let uploadResult = await ai.files.upload({
       file: tempFilePath,
       config: { mimeType: finalMimeType }
     } as any);
 
-    // Clean up local cloud container storage immediately
     if (fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
     }
 
-    // 4. Polling Loop to wait until video/audio finishes processing
     let fileState = (uploadResult as any).state || "PROCESSING";
     const fileName = (uploadResult as any).name;
 
@@ -67,7 +61,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // 5. Ultimate Brand Architecture Content Prompt Blueprint
     const prompt = `
       You are Content Multiplier, an elite personal brand architect and multi-platform distribution growth strategist building world-class content for high-tier professionals, builders, and leaders across all industries. 
       The copy you write must be stripped of all fluff—as simple as possible, but not simpler. It must feel so premium and human that users instantly see why this platform is worth a premium subscription.
@@ -118,7 +111,7 @@ export async function POST(request: Request) {
 
       Ensure the division lines "---" and brackets match perfectly so the frontend app splits the cards beautifully.
     `;
-    // 6. Request Generation from Gemini
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash", 
       contents: [
@@ -132,7 +125,6 @@ export async function POST(request: Request) {
       ]
     });
 
-    // 7. Cleanup cloud platform files API space
     if (uploadResult && fileName) {
       await ai.files.delete({ name: fileName });
     }

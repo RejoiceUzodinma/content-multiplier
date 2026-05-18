@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import path from "path";
+import os from "os"; // Essential for cloud temp path resolution
 
 const apiKey = process.env.GEMINI_API_KEY_2 || "";
 const ai = new GoogleGenAI({ apiKey: apiKey });
@@ -13,60 +14,60 @@ export async function POST(request: Request) {
     }
 
     const formData = await request.formData();
-    const file = formData.get("file") as File | null; 
-    
-    const textInput = formData.get("textContext") as string || ""; 
+    const file = formData.get("file") as File;
     const brandVoice = formData.get("brandVoice") || "";
     const userTitle = formData.get("userTitle") || "";
     const userName = formData.get("userName") || "";
     const postGoal = formData.get("postGoal") || "I want them to feel inspired";
 
-    if (!file && !textInput.trim()) {
-      return NextResponse.json({ error: "Please provide either a text observation or upload/record a media file." }, { status: 400 });
+    if (!file) {
+      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
     }
 
-    const contentsArray: any[] = [];
-    let uploadedFileRef: any = null;
-    if (file && file.size > 0) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const tempDir = path.join(process.cwd(), "/tmp");
-      if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
-      
-      const tempFilePath = path.join(tempDir, `${Date.now()}_${file.name}`);
-      fs.writeFileSync(tempFilePath, buffer);
+    // 1. Cloud-Safe Temp Buffering using standard OS temp directory
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const tempDir = os.tmpdir(); // This is ALWAYS writable on Vercel/Cloud functions!
+    
+    // Create a safe, unique filename to prevent overwriting strings
+    const safeFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
+    const tempFilePath = path.join(tempDir, safeFileName);
+    fs.writeFileSync(tempFilePath, buffer);
 
-      uploadedFileRef = await ai.files.upload({
-        file: tempFilePath,
-        config: {
-          mimeType: file.type,
-        }
-      } as any);
+    // 2. Identify and explicitly verify the Mime Type (Handles mobile web recording edge cases)
+    let finalMimeType = file.type;
+    if (!finalMimeType || finalMimeType === "audio/x-wav" || finalMimeType.includes("octet-stream")) {
+      if (file.name.endsWith(".wav")) finalMimeType = "audio/wav";
+      else if (file.name.endsWith(".mp3")) finalMimeType = "audio/mp3";
+      else if (file.name.endsWith(".m4a")) finalMimeType = "audio/m4a";
+      else if (file.name.endsWith(".mp4")) finalMimeType = "video/mp4";
+      else finalMimeType = "audio/wav"; // Default fallback match block
+    }
 
+    // 3. Upload file safely to Gemini Files API
+    let uploadResult = await ai.files.upload({
+      file: tempFilePath,
+      config: { mimeType: finalMimeType }
+    } as any);
+
+    // Clean up local cloud container storage immediately
+    if (fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
+    }
 
-      let fileState = (uploadedFileRef as any).state || "PROCESSING";
-      const fileName = (uploadedFileRef as any).name;
+    // 4. Polling Loop to wait until video/audio finishes processing
+    let fileState = (uploadResult as any).state || "PROCESSING";
+    const fileName = (uploadResult as any).name;
 
-      while (fileState === "PROCESSING") {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        const checkStatus = await ai.files.get({ name: fileName });
-        fileState = (checkStatus as any).state;
-
-        if (fileState === "FAILED") {
-          throw new Error("Google multimedia processing failed. Please try another file.");
-        }
+    while (fileState === "PROCESSING") {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const checkStatus = await ai.files.get({ name: fileName });
+      fileState = (checkStatus as any).state;
+      if (fileState === "FAILED") {
+        throw new Error("Google media processing failed on the cloud backend engine.");
       }
+    }
 
-      contentsArray.push({
-        fileData: {
-          fileUri: (uploadedFileRef as any).uri,
-          mimeType: (uploadedFileRef as any).mimeType
-        }
-      });
-    }
-    if (textInput.trim()) {
-      contentsArray.push(`User's Core Thought/Transcript Context: ${textInput}`);
-    }
+    // 5. Ultimate Brand Architecture Content Prompt Blueprint
     const prompt = `
       You are Content Multiplier, an elite personal brand architect and multi-platform distribution growth strategist building world-class content for high-tier professionals, builders, and leaders across all industries. 
       The copy you write must be stripped of all fluff—as simple as possible, but not simpler. It must feel so premium and human that users instantly see why this platform is worth a premium subscription.
@@ -77,6 +78,7 @@ export async function POST(request: Request) {
       - Content Strategy Goal: ${postGoal}
       - Core Writing Voice Guide: ${brandVoice}
 
+      ---
       STRICT WRITING LAWS:
       - Absolutely NO robotic AI boilerplate, generic introductory sentences, or summary "wallpaper text". 
       - Never use phrases like "In today's fast-paced digital era", "delve", "testament", "beacon", "moreover", or "let's dive in".
@@ -116,22 +118,29 @@ export async function POST(request: Request) {
 
       Ensure the division lines "---" and brackets match perfectly so the frontend app splits the cards beautifully.
     `;
-    
-    contentsArray.push(prompt);
-
+    // 6. Request Generation from Gemini
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash", 
-      contents: contentsArray
+      contents: [
+        {
+          fileData: {
+            fileUri: (uploadResult as any).uri,
+            mimeType: (uploadResult as any).mimeType
+          }
+        },
+        prompt
+      ]
     });
 
-    if (uploadedFileRef && (uploadedFileRef as any).name) {
-      await ai.files.delete({ name: (uploadedFileRef as any).name });
+    // 7. Cleanup cloud platform files API space
+    if (uploadResult && fileName) {
+      await ai.files.delete({ name: fileName });
     }
 
     return NextResponse.json({ content: response.text }, { status: 200 });
 
   } catch (error: any) {
-    console.error("Gemini Multiplier Engine Error:", error);
+    console.error("Gemini Multiplier Production Engine Error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

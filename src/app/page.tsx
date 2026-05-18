@@ -215,7 +215,7 @@ export default function Home() {
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
-      loading && setLoading(false);
+      setLoading(false);
     }
   };
 
@@ -229,9 +229,10 @@ export default function Home() {
   };
 
   const posts = result
-    ? result.split(/(?=\[LINKEDIN|\[INSTAGRAM|\[X THREAD|### \*\*LinkedIn|### \*\*Instagram)/gi)
+    ? result.split(/(?=\[LINKEDIN|\[INSTAGRAM|\[X\s+POST|###\s+\*\*LinkedIn|###\s+\*\*Instagram)/gi)
         .filter(p => p.trim().length > 20) 
     : [];
+
   return (
     <main className="min-h-screen bg-slate-50 overflow-x-hidden text-slate-900 font-sans">
       {!session ? (
@@ -290,7 +291,6 @@ export default function Home() {
                 />
                 <div className="flex flex-wrap items-center gap-3 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   
-                  
                   <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
                     <Video size={16} />
                     <span>Upload Video</span>
@@ -304,7 +304,6 @@ export default function Home() {
                     />
                   </label>
 
-                 
                   <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
                     <FileAudio size={16} />
                     <span>Upload Audio Note</span>

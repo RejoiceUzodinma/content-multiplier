@@ -7,7 +7,26 @@ import os from "os";
 const apiKey = process.env.GEMINI_API_KEY_2 || "";
 const ai = new GoogleGenAI({ apiKey: apiKey });
 
+async function generateContentWithRetry(aiInstance: any, payload: any, retries = 3, delay = 2000): Promise<any> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await aiInstance.models.generateContent(payload);
+    } catch (error: any) {
+      const is503 = error?.message?.includes("503") || error?.status === 503 || JSON.stringify(error).includes("503");
+      if (is503 && i < retries - 1) {
+        await new Promise((res) => setTimeout(res, delay * (i + 1)));
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 export async function POST(request: Request) {
+  let tempFilePath = "";
+  let fileName = "";
+  let uploadResult: any = null;
+
   try {
     if (!apiKey) {
       return NextResponse.json({ error: "Server configuration error: Missing API Key" }, { status: 500 });
@@ -26,9 +45,9 @@ export async function POST(request: Request) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const tempDir = os.tmpdir();
+    const safeFileName = `${Date.now()}_clean_${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
+    tempFilePath = path.join(tempDir, safeFileName);
     
-    const safeFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
-    const tempFilePath = path.join(tempDir, safeFileName);
     fs.writeFileSync(tempFilePath, buffer);
 
     let finalMimeType = file.type;
@@ -40,29 +59,32 @@ export async function POST(request: Request) {
       else finalMimeType = "audio/wav";
     }
 
-    let uploadResult = await ai.files.upload({
+    uploadResult = await ai.files.upload({
       file: tempFilePath,
       config: { mimeType: finalMimeType }
     } as any);
 
+    fileName = uploadResult.name;
+
     if (fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
+      tempFilePath = "";
     }
 
-    let fileState = (uploadResult as any).state || "PROCESSING";
-    const fileName = (uploadResult as any).name;
-
-    while (fileState === "PROCESSING") {
+    let fileState = uploadResult.state || "PROCESSING";
+    let attempts = 0;
+    while (fileState === "PROCESSING" && attempts < 15) {
       await new Promise((resolve) => setTimeout(resolve, 2000));
       const checkStatus = await ai.files.get({ name: fileName });
-      fileState = (checkStatus as any).state;
+      fileState = checkStatus.state;
+      attempts++;
       if (fileState === "FAILED") {
-        throw new Error("Google media processing failed on the cloud backend engine.");
+        throw new Error("Media processing failed on the cloud backend engine.");
       }
     }
 
     const prompt = `
-      You are Content Multiplier, an elite personal brand architect and multi-platform distribution growth strategist building world-class content for high-tier professionals, builders, and leaders across all industries. 
+        You are Content Multiplier, an elite personal brand architect and multi-platform distribution growth strategist building world-class content for high-tier professionals, builders, and leaders across all industries. 
       The copy you write must be stripped of all fluff—as simple as possible, but not simpler. It must feel so premium and human that users instantly see why this platform is worth a premium subscription.
 
       User Profile Context:
@@ -71,7 +93,6 @@ export async function POST(request: Request) {
       - Content Strategy Goal: ${postGoal}
       - Core Writing Voice Guide: ${brandVoice}
 
-      ---
       STRICT WRITING LAWS:
       - Absolutely NO robotic AI boilerplate, generic introductory sentences, or summary "wallpaper text". 
       - Never use phrases like "In today's fast-paced digital era", "delve", "testament", "beacon", "moreover", or "let's dive in".
@@ -112,27 +133,41 @@ export async function POST(request: Request) {
       Ensure the division lines "---" and brackets match perfectly so the frontend app splits the cards beautifully.
     `;
 
-    const response = await ai.models.generateContent({
+    const response = await generateContentWithRetry(ai, {
       model: "gemini-2.5-flash", 
       contents: [
         {
           fileData: {
-            fileUri: (uploadResult as any).uri,
-            mimeType: (uploadResult as any).mimeType
+            fileUri: uploadResult.uri,
+            mimeType: uploadResult.mimeType
           }
         },
         prompt
       ]
     });
 
-    if (uploadResult && fileName) {
+    if (fileName) {
       await ai.files.delete({ name: fileName });
+      fileName = "";
     }
 
     return NextResponse.json({ content: response.text }, { status: 200 });
 
   } catch (error: any) {
-    console.error("Gemini Multiplier Production Engine Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("Production Core Engine Failure:", error);
+    
+    
+    if (tempFilePath && fs.existsSync(tempFilePath)) {
+      try { fs.unlinkSync(tempFilePath); } catch (_) {}
+    }
+    if (ai && fileName) {
+      try { await ai.files.delete({ name: fileName }); } catch (_) {}
+    }
+
+    const readableErrorMessage = error?.message?.includes("503") 
+      ? "The processing clusters are heavily populated right now. Please press process again in a few seconds." 
+      : error.message || "An unexpected error occurred during processing.";
+
+    return NextResponse.json({ error: readableErrorMessage }, { status: 500 });
   }
 }

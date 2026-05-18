@@ -150,6 +150,22 @@ export default function Home() {
       return alert("Please enter a text observation or upload/record a media file first!");
     }
 
+    if (mediaFile) {
+      const MAX_PAYLOAD_LIMIT = 4.5 * 1024 * 1024; 
+      if (mediaFile.size > MAX_PAYLOAD_LIMIT) {
+        if (mediaFile.type.startsWith("video/")) {
+          alert(
+            "⚠️ Video file is too large for serverless processing.\n\n" +
+            "To keep performance ultra-fast, please upload a shorter video clip (under 25 seconds), " +
+            "or use a clear Audio Note / Voice memo instead!"
+          );
+        } else {
+          alert("⚠️ Attached file size exceeds the 4.5MB server limit. Please upload a compressed asset or smaller file.");
+        }
+        return; 
+      }
+    }
+
     setLoading(true);
     try {
       let res;
@@ -368,6 +384,7 @@ export default function Home() {
                     ].map((goal) => (
                       <button
                         key={goal}
+                        type="button"
                         onClick={() => setPostGoal(goal)}
                         className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all ${postGoal === goal ? 'bg-slate-900 text-white scale-105' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                       >

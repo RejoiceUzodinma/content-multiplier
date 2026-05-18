@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import PostCard from "@/components/PostCard";
-import { History, Star, Settings, Zap, MessageSquare, Target, Video, Mic, Square, Trash2, FileAudio } from "lucide-react";
+import { History, Star, Settings, Zap, MessageSquare, Target, Video, Mic, Square, Trash2, FileAudio, AlertTriangle } from "lucide-react";
 
 import { supabase } from "../../lib/supabaseClient"; 
 import AuthModal from "@/components/AuthModal";
@@ -29,6 +29,7 @@ export default function Home() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -52,6 +53,13 @@ export default function Home() {
     };
   }, []);
 
+  const triggerToastError = (msg: string) => {
+    setErrorMessage(msg);
+    setTimeout(() => {
+      setErrorMessage(null);
+    }, 7000);
+  };
+
   const fetchProfile = async (userId: string) => {
     const { data } = await supabase
       .from('profiles')
@@ -71,7 +79,7 @@ export default function Home() {
     try {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
-        alert("Please sign in to save your progress.");
+        triggerToastError("Please sign in to save your profile configuration.");
         return;
       }
       const { error } = await supabase
@@ -91,7 +99,7 @@ export default function Home() {
       
     } catch (error: any) {
       console.error("Error saving:", error.message);
-      alert("Error saving profile: " + error.message);
+      triggerToastError("Error saving profile options: " + error.message);
     } finally {
       setSaveLoading(false);
     }
@@ -124,7 +132,7 @@ export default function Home() {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
     } catch (err) {
-      alert("Microphone access denied or unsupported on this browser platform.");
+      triggerToastError("Microphone access was denied or is completely unsupported on this browser platform.");
     }
   };
 
@@ -145,22 +153,37 @@ export default function Home() {
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
   };
 
+  // CTO RESILIENCE UPGRADE: Dynamic client fetch engine that intercepts 503s and runs exponential backoff retries
+  const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 1500): Promise<Response> => {
+    const response = await fetch(url, options);
+    
+    // If upstream engine throws high demand (503), trigger an invisible retry run
+    if (response.status === 503 && retries > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 2);
+    }
+    
+    return response;
+  };
+
   const handleGenerate = async () => {
+    setErrorMessage(null);
+
     if (!dailyStory.trim() && !mediaFile) {
-      return alert("Please enter a text observation or upload/record a media file first!");
+      return triggerToastError("Please enter a text observation or upload/record a media file first!");
     }
 
     if (mediaFile) {
       const MAX_PAYLOAD_LIMIT = 4.5 * 1024 * 1024; 
       if (mediaFile.size > MAX_PAYLOAD_LIMIT) {
         if (mediaFile.type.startsWith("video/")) {
-          alert(
-            "⚠️ Video file is too large for serverless processing.\n\n" +
+          triggerToastError(
+            "⚠️ Video file is too large for serverless processing. " +
             "To keep performance ultra-fast, please upload a shorter video clip (under 25 seconds), " +
             "or use a clear Audio Note / Voice memo instead!"
           );
         } else {
-          alert("⚠️ Attached file size exceeds the 4.5MB server limit. Please upload a compressed asset or smaller file.");
+          triggerToastError("⚠️ Attached file size exceeds the 4.5MB server limit. Please upload a compressed asset or smaller file.");
         }
         return; 
       }
@@ -168,7 +191,7 @@ export default function Home() {
 
     setLoading(true);
     try {
-      let res;
+      let res: Response;
       
       if (mediaFile) {
         const formData = new FormData();
@@ -180,12 +203,12 @@ export default function Home() {
 
         if (dailyStory.trim()) formData.append("textContext", dailyStory);
 
-        res = await fetch("/api/repurpose", {
+        res = await fetchWithRetry("/api/repurpose", {
           method: "POST",
           body: formData,
         });
       } else {
-        res = await fetch("/api/generate", {
+        res = await fetchWithRetry("/api/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ 
@@ -199,8 +222,18 @@ export default function Home() {
         });
       }
 
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("The cluster backend encountered an unexpected crash. Please tap 'Multiply My Influence' to retry again.");
+      }
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Generation endpoint failure");
+      if (!res.ok) {
+        if (res.status === 503 || (data.error && data.error.includes("demand"))) {
+          throw new Error("The processing clusters are heavily populated right now. Please press process again in a few seconds.");
+        }
+        throw new Error(data.error || "Generation endpoint configuration failure");
+      }
       
       setResult(data.content);
       
@@ -224,12 +257,12 @@ export default function Home() {
             user_id: session.user.id, 
             action_type: mediaFile ? 'media_multiplier_gen' : 'content_multiplier_gen', 
             input_word_count: dailyStory.trim() ? dailyStory.trim().split(/\s+/).length : 0,
-            platform_type: postGoal 
+            platform_type: postGoal
           }
         ]);
       }
     } catch (err: any) {
-      alert("Error: " + err.message);
+      triggerToastError(err.message || "An unexpected dynamic error occurred. Please tap process again.");
     } finally {
       setLoading(false);
     }
@@ -250,7 +283,28 @@ export default function Home() {
     : [];
 
   return (
-    <main className="min-h-screen bg-slate-50 overflow-x-hidden text-slate-900 font-sans">
+    <main className="min-h-screen bg-slate-50 overflow-x-hidden text-slate-900 font-sans relative">
+      
+      <AnimatePresence>
+        {errorMessage && (
+          <motion.div 
+            initial={{ opacity: 0, y: -50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.9 }}
+            className="fixed top-6 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-50 w-full max-w-md bg-white border-2 border-red-100 shadow-2xl p-4 rounded-2xl flex items-start gap-3"
+          >
+            <div className="p-2 rounded-xl bg-red-50 text-red-600 shrink-0">
+              <AlertTriangle size={18} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider mb-0.5">System Notification</h4>
+              <p className="text-xs font-medium text-slate-600 leading-relaxed">{errorMessage}</p>
+            </div>
+            <button onClick={() => setErrorMessage(null)} className="text-slate-400 hover:text-slate-900 font-bold text-xs px-1 uppercase tracking-tighter">Close</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {!session ? (
         <div className="flex flex-col items-center justify-center min-h-screen px-4 text-center">
           <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }}>
@@ -273,7 +327,7 @@ export default function Home() {
                   <div className="p-2.5 rounded-xl bg-blue-600 text-white">
                     <Settings size={20} />
                   </div>
-                  <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Brand Bible</h2>
+                  <h2 className="text-sm font-black text-slate-880 uppercase tracking-widest">Brand Bible</h2>
                </div>
                <button 
                 onClick={handleSave} 

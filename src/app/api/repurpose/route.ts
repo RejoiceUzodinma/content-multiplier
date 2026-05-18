@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import fs from "fs";
 import path from "path";
-import os from "os";
 
 const apiKey = process.env.GEMINI_API_KEY_2 || "";
 const ai = new GoogleGenAI({ apiKey: apiKey });
@@ -25,7 +24,6 @@ async function generateWithBackoff(aiInstance: any, payload: any, retries = 3, d
 
 export async function POST(request: Request) {
   let tempFilePath = "";
-  let fileName = "";
 
   try {
     if (!apiKey) {
@@ -77,7 +75,9 @@ export async function POST(request: Request) {
 
     if (file && file.size > 0 && file.name) {
       const buffer = Buffer.from(await file.arrayBuffer());
-      const tempDir = os.tmpdir();
+      
+      const tempDir = "/tmp"; 
+      
       const safeFileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
       tempFilePath = path.join(tempDir, safeFileName);
       

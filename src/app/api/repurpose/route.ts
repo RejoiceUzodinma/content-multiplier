@@ -4,16 +4,25 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "50mb", 
+    },
+  },
+};
+
 const apiKey = process.env.GEMINI_API_KEY_2 || "";
 const ai = new GoogleGenAI({ apiKey: apiKey });
 
-async function generateContentWithRetry(aiInstance: any, payload: any, retries = 3, delay = 2000): Promise<any> {
+async function generateWithBackoff(aiInstance: any, payload: any, retries = 3, delay = 2000): Promise<any> {
   for (let i = 0; i < retries; i++) {
     try {
       return await aiInstance.models.generateContent(payload);
     } catch (error: any) {
-      const is503 = error?.message?.includes("503") || error?.status === 503 || JSON.stringify(error).includes("503");
-      if (is503 && i < retries - 1) {
+      const errorStr = JSON.stringify(error) || "";
+      const isTemporary = errorStr.includes("503") || errorStr.includes("INTERNAL") || error?.status === 503;
+      if (isTemporary && i < retries - 1) {
         await new Promise((res) => setTimeout(res, delay * (i + 1)));
         continue;
       }
@@ -24,8 +33,7 @@ async function generateContentWithRetry(aiInstance: any, payload: any, retries =
 
 export async function POST(request: Request) {
   let tempFilePath = "";
-  let fileName = "";
-  let uploadResult: any = null;
+  let uploadedFileRef: any = null;
 
   try {
     if (!apiKey) {
@@ -33,58 +41,14 @@ export async function POST(request: Request) {
     }
 
     const formData = await request.formData();
-    const file = formData.get("file") as File;
+    const file = formData.get("file") as File | null;
     const brandVoice = formData.get("brandVoice") || "";
     const userTitle = formData.get("userTitle") || "";
     const userName = formData.get("userName") || "";
     const postGoal = formData.get("postGoal") || "I want them to feel inspired";
 
-    if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const tempDir = os.tmpdir();
-    const safeFileName = `${Date.now()}_clean_${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
-    tempFilePath = path.join(tempDir, safeFileName);
-    
-    fs.writeFileSync(tempFilePath, buffer);
-
-    let finalMimeType = file.type;
-    if (!finalMimeType || finalMimeType === "audio/x-wav" || finalMimeType.includes("octet-stream")) {
-      if (file.name.endsWith(".wav")) finalMimeType = "audio/wav";
-      else if (file.name.endsWith(".mp3")) finalMimeType = "audio/mp3";
-      else if (file.name.endsWith(".m4a")) finalMimeType = "audio/m4a";
-      else if (file.name.endsWith(".mp4")) finalMimeType = "video/mp4";
-      else finalMimeType = "audio/wav";
-    }
-
-    uploadResult = await ai.files.upload({
-      file: tempFilePath,
-      config: { mimeType: finalMimeType }
-    } as any);
-
-    fileName = uploadResult.name;
-
-    if (fs.existsSync(tempFilePath)) {
-      fs.unlinkSync(tempFilePath);
-      tempFilePath = "";
-    }
-
-    let fileState = uploadResult.state || "PROCESSING";
-    let attempts = 0;
-    while (fileState === "PROCESSING" && attempts < 15) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      const checkStatus = await ai.files.get({ name: fileName });
-      fileState = checkStatus.state;
-      attempts++;
-      if (fileState === "FAILED") {
-        throw new Error("Media processing failed on the cloud backend engine.");
-      }
-    }
-
-    const prompt = `
-        You are Content Multiplier, an elite personal brand architect and multi-platform distribution growth strategist building world-class content for high-tier professionals, builders, and leaders across all industries. 
+    const promptText = `
+      You are Content Multiplier, an elite personal brand architect and multi-platform distribution growth strategist building world-class content for high-tier professionals, builders, and leaders across all industries. 
       The copy you write must be stripped of all fluff—as simple as possible, but not simpler. It must feel so premium and human that users instantly see why this platform is worth a premium subscription.
 
       User Profile Context:
@@ -131,43 +95,83 @@ export async function POST(request: Request) {
       - Options 6-10: Premium long-form direct posts leveraging whitespace, bulleted frameworks, and deep copy layout designs optimized for X Premium readers.
 
       Ensure the division lines "---" and brackets match perfectly so the frontend app splits the cards beautifully.
+    
     `;
 
-    const response = await generateContentWithRetry(ai, {
-      model: "gemini-2.5-flash", 
-      contents: [
-        {
-          fileData: {
-            fileUri: uploadResult.uri,
-            mimeType: uploadResult.mimeType
-          }
-        },
-        prompt
-      ]
-    });
+    const partsArray: any[] = [{ text: promptText }];
 
-    if (fileName) {
-      await ai.files.delete({ name: fileName });
-      fileName = "";
+    if (file && file.size > 0 && file.name) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const tempDir = os.tmpdir();
+      const safeFileName = `${Date.now()}_prod_${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
+      tempFilePath = path.join(tempDir, safeFileName);
+      fs.writeFileSync(tempFilePath, buffer);
+
+      let finalMimeType = file.type;
+      if (!finalMimeType || finalMimeType === "audio/x-wav" || finalMimeType.includes("octet-stream")) {
+        if (file.name.endsWith(".wav")) finalMimeType = "audio/wav";
+        else if (file.name.endsWith(".mp3")) finalMimeType = "audio/mp3";
+        else if (file.name.endsWith(".m4a")) finalMimeType = "audio/m4a";
+        else if (file.name.endsWith(".mp4")) finalMimeType = "video/mp4";
+        else finalMimeType = "audio/wav";
+      }
+
+      uploadedFileRef = await ai.files.upload({
+        file: tempFilePath,
+        config: { mimeType: finalMimeType }
+      } as any);
+
+      if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
+        tempFilePath = "";
+      }
+
+      let fileState = uploadedFileRef.state || "PROCESSING";
+      let loopAttempts = 0;
+      while (fileState === "PROCESSING" && loopAttempts < 15) {
+        await new Promise((res) => setTimeout(res, 2000));
+        const checkStatus = await ai.files.get({ name: uploadedFileRef.name });
+        fileState = checkStatus.state;
+        loopAttempts++;
+      }
+
+      if (fileState === "FAILED") {
+        throw new Error("Cloud asset processing cluster error.");
+      }
+
+      partsArray.unshift(uploadedFileRef);
     }
 
-    return NextResponse.json({ content: response.text }, { status: 200 });
+    const response = await generateWithBackoff(ai, {
+      model: "gemini-2.5-flash",
+      contents: [{ role: "user", parts: partsArray }]
+    });
+
+    if (uploadedFileRef && uploadedFileRef.name) {
+      try { await ai.files.delete({ name: uploadedFileRef.name }); } catch (_) {}
+    }
+
+    return NextResponse.json({ content: response.text || "" }, { status: 200 });
 
   } catch (error: any) {
     console.error("Production Core Engine Failure:", error);
-    
-    
+
     if (tempFilePath && fs.existsSync(tempFilePath)) {
       try { fs.unlinkSync(tempFilePath); } catch (_) {}
     }
-    if (ai && fileName) {
-      try { await ai.files.delete({ name: fileName }); } catch (_) {}
+    if (uploadedFileRef && uploadedFileRef.name) {
+      try { await ai.files.delete({ name: uploadedFileRef.name }); } catch (_) {}
     }
 
-    const readableErrorMessage = error?.message?.includes("503") 
-      ? "The processing clusters are heavily populated right now. Please press process again in a few seconds." 
-      : error.message || "An unexpected error occurred during processing.";
+    const errMessage = error?.message || JSON.stringify(error) || "";
+    let localizedReturnString = "The model is currently experiencing temporary peak demand. Please tap process again.";
 
-    return NextResponse.json({ error: readableErrorMessage }, { status: 500 });
+    if (errMessage.includes("503")) {
+      localizedReturnString = "The execution pipeline is heavily loaded right now. Please resubmit the generation request.";
+    } else if (errMessage.length > 0 && !errMessage.includes("{")) {
+      localizedReturnString = errMessage;
+    }
+
+    return NextResponse.json({ error: localizedReturnString }, { status: 500 });
   }
 }

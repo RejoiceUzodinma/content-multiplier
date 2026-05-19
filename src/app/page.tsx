@@ -266,6 +266,19 @@ export default function Home() {
     setSavedPosts(updated);
     localStorage.setItem("saved_bangers", JSON.stringify(updated));
   };
+  const handleDeleteFromVault = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation(); 
+    const updated = history.filter(item => item.id !== id);
+    setHistory(updated);
+    localStorage.setItem("content_vault", JSON.stringify(updated));
+  };
+
+  const handleDeleteFromSaved = (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = savedPosts.filter(post => post.id !== id);
+    setSavedPosts(updated);
+    localStorage.setItem("saved_bangers", JSON.stringify(updated));
+  };
 
   const posts = result
     ? result.split(/(?=\[LINKEDIN|\[INSTAGRAM|\[X\s+POST|###\s+\*\*LinkedIn|###\s+\*\*Instagram)/gi)
@@ -420,7 +433,7 @@ export default function Home() {
                         onClick={() => setPostGoal(goal)}
                         className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all ${postGoal === goal ? 'bg-slate-900 text-white scale-105' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                       >
-                        ={goal}
+                        {goal}
                       </button>
                     ))}
                   </div>
@@ -440,7 +453,6 @@ export default function Home() {
                         isSaved={savedPosts.some(p => p.content === post)} 
                         onSave={(edited: string) => toggleSavePost(edited)} 
                         onDelete={() => {
-                          // Clean frontend fallback: instantly strips out the exact post segment from state
                           const remainingPosts = posts.filter((_, idx) => idx !== i);
                           setResult(remainingPosts.join("\n\n"));
                         }} 
@@ -462,20 +474,63 @@ export default function Home() {
                   </button>
                 </nav>
                 <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
-                  {activeTab === "history" ? (
-                    history.map((item) => (
-                      <button key={item.id} onClick={() => setResult(item.content)} className="w-full text-left p-4 bg-slate-50 hover:bg-white rounded-xl border border-transparent hover:border-slate-200 transition-all">
-                        <p className="text-[10px] text-slate-500 line-clamp-2 italic">"{item.preview}"</p>
-                      </button>
-                    ))
-                  ) : (
-                    savedPosts.map((post) => (
-                      <div key={post.id} className="p-4 bg-amber-50/50 border border-amber-100 rounded-xl space-y-2">
-                        <p className="text-[10px] text-slate-600 line-clamp-2">{post.content}</p>
-                        <button onClick={() => setResult(post.content)} className="text-[8px] font-black text-amber-700 uppercase">Load Draft</button>
-                      </div>
-                    ))
-                  )}
+                  <AnimatePresence mode="popLayout">
+                    {activeTab === "history" ? (
+                      history.length === 0 ? (
+                        <p className="text-xs font-medium text-slate-400 text-center py-4">Vault is empty</p>
+                      ) : (
+                        history.map((item) => (
+                          <motion.div 
+                            key={item.id}
+                            initial={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, x: 50, scale: 0.9 }}
+                            className="group w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-white rounded-xl border border-transparent hover:border-slate-200 transition-all cursor-pointer"
+                            onClick={() => setResult(item.content)}
+                          >
+                            <div className="flex-1 min-w-0 pr-2">
+                              <p className="text-[10px] text-slate-500 line-clamp-2 italic">"{item.preview}"</p>
+                            </div>
+                            <button 
+                              onClick={(e) => handleDeleteFromVault(item.id, e)}
+                              className="text-slate-300 hover:text-red-500 p-1 rounded-lg transition-colors shrink-0"
+                              title="Delete from Vault"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </motion.div>
+                        ))
+                      )
+                    ) : (
+                      savedPosts.length === 0 ? (
+                        <p className="text-xs font-medium text-slate-400 text-center py-4">No saved posts yet</p>
+                      ) : (
+                        savedPosts.map((post) => (
+                          <motion.div 
+                            key={post.id}
+                            initial={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, x: 50, scale: 0.9 }}
+                            className="p-4 bg-amber-50/50 border border-amber-100 rounded-xl space-y-2 flex flex-col relative group"
+                          >
+                            <div className="absolute top-3 right-3 opacity-60 hover:opacity-100">
+                              <button 
+                                onClick={(e) => handleDeleteFromSaved(post.id, e)}
+                                className="text-slate-400 hover:text-red-500 p-1 transition-colors"
+                                title="Delete saved post"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                            <div className="pr-6">
+                              <p className="text-[10px] text-slate-600 line-clamp-2">{post.content}</p>
+                            </div>
+                            <div>
+                              <button onClick={() => setResult(post.content)} className="text-[8px] font-black text-amber-700 uppercase tracking-wider bg-white border border-amber-200 px-2.5 py-1 rounded-md hover:bg-amber-100 transition-all">Load Draft</button>
+                            </div>
+                          </motion.div>
+                        ))
+                      )
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
               <button onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }} className="w-full py-4 text-[10px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest border-t border-slate-100 mt-4">

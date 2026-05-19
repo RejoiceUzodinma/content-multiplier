@@ -153,11 +153,9 @@ export default function Home() {
     return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
   };
 
-  // CTO RESILIENCE UPGRADE: Dynamic client fetch engine that intercepts 503s and runs exponential backoff retries
   const fetchWithRetry = async (url: string, options: RequestInit, retries = 3, delay = 1500): Promise<Response> => {
     const response = await fetch(url, options);
     
-    // If upstream engine throws high demand (503), trigger an invisible retry run
     if (response.status === 503 && retries > 0) {
       await new Promise((resolve) => setTimeout(resolve, delay));
       return fetchWithRetry(url, options, retries - 1, delay * 2);
@@ -176,15 +174,7 @@ export default function Home() {
     if (mediaFile) {
       const MAX_PAYLOAD_LIMIT = 4.5 * 1024 * 1024; 
       if (mediaFile.size > MAX_PAYLOAD_LIMIT) {
-        if (mediaFile.type.startsWith("video/")) {
-          triggerToastError(
-            "⚠️ Video file is too large for serverless processing. " +
-            "To keep performance ultra-fast, please upload a shorter video clip (under 25 seconds), " +
-            "or use a clear Audio Note / Voice memo instead!"
-          );
-        } else {
-          triggerToastError("⚠️ Attached file size exceeds the 4.5MB server limit. Please upload a compressed asset or smaller file.");
-        }
+        triggerToastError("⚠️ Attached file size exceeds the 4.5MB server limit. Please upload a compressed asset or smaller file.");
         return; 
       }
     }
@@ -327,7 +317,7 @@ export default function Home() {
                   <div className="p-2.5 rounded-xl bg-blue-600 text-white">
                     <Settings size={20} />
                   </div>
-                  <h2 className="text-sm font-black text-slate-880 uppercase tracking-widest">Brand Bible</h2>
+                  <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest">Brand Bible</h2>
                </div>
                <button 
                 onClick={handleSave} 
@@ -361,21 +351,9 @@ export default function Home() {
                 />
                 <div className="flex flex-wrap items-center gap-3 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   
-                  <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
-                    <Video size={16} />
-                    <span>Upload Video</span>
-                    <input 
-                      type="file" 
-                      accept="video/*" 
-                      className="hidden" 
-                      onChange={(e) => {
-                        if (e.target.files?.[0]) setMediaFile(e.target.files[0]);
-                      }} 
-                    />
-                  </label>
 
                   <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
-                    <FileAudio size={16} />
+                    <FileAudio size={16} className="text-blue-600" />
                     <span>Upload Audio Note</span>
                     <input 
                       type="file" 
@@ -411,7 +389,7 @@ export default function Home() {
                 {mediaFile && (
                   <div className="w-full flex items-center justify-between gap-2 p-4 bg-blue-50 text-blue-700 rounded-xl text-xs font-bold mb-6 border border-blue-100 overflow-hidden">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      {mediaFile.type.startsWith("video/") ? <Video size={16} className="shrink-0" /> : <FileAudio size={16} className="shrink-0" />}
+                      <FileAudio size={16} className="shrink-0" />
                       <span className="truncate">Attached: {mediaFile.name} ({(mediaFile.size / (1024 * 1024)).toFixed(2)} MB)</span>
                     </div>
                     <button 
@@ -442,7 +420,7 @@ export default function Home() {
                         onClick={() => setPostGoal(goal)}
                         className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all ${postGoal === goal ? 'bg-slate-900 text-white scale-105' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}
                       >
-                        {goal}
+                        ={goal}
                       </button>
                     ))}
                   </div>
@@ -456,12 +434,16 @@ export default function Home() {
               <div className="space-y-8 pt-6">
                 <AnimatePresence mode="popLayout">
                   {posts.map((post, i) => (
-                    <motion.div key={i} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }}>
+                    <motion.div key={post.substring(0, 30) + i} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}>
                       <PostCard 
                         content={post} 
                         isSaved={savedPosts.some(p => p.content === post)} 
                         onSave={(edited: string) => toggleSavePost(edited)} 
-                        onDelete={() => setResult(result.replace(post, ""))} 
+                        onDelete={() => {
+                          // Clean frontend fallback: instantly strips out the exact post segment from state
+                          const remainingPosts = posts.filter((_, idx) => idx !== i);
+                          setResult(remainingPosts.join("\n\n"));
+                        }} 
                       />
                     </motion.div>
                   ))}

@@ -266,6 +266,7 @@ export default function Home() {
     setSavedPosts(updated);
     localStorage.setItem("saved_bangers", JSON.stringify(updated));
   };
+
   const handleDeleteFromVault = (id: number, e: React.MouseEvent) => {
     e.stopPropagation(); 
     const updated = history.filter(item => item.id !== id);
@@ -364,7 +365,6 @@ export default function Home() {
                 />
                 <div className="flex flex-wrap items-center gap-3 mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                   
-
                   <label className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl cursor-pointer hover:border-blue-500 hover:text-blue-600 transition-all text-xs font-bold text-slate-600">
                     <FileAudio size={16} className="text-blue-600" />
                     <span>Upload Audio Note</span>
@@ -443,13 +443,13 @@ export default function Home() {
                   {loading ? "Multiplication in progress..." : <><Zap size={20} /> Multiply My Influence</>}
                 </button>
               </div>
-
               <div className="space-y-8 pt-6">
                 <AnimatePresence mode="popLayout">
                   {posts.map((post, i) => (
                     <motion.div key={post.substring(0, 30) + i} initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}>
                       <PostCard 
                         content={post} 
+                        index={i} 
                         isSaved={savedPosts.some(p => p.content === post)} 
                         onSave={(edited: string) => toggleSavePost(edited)} 
                         onDelete={() => {

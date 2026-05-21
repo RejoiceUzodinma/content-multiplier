@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Copy, Check, Smile, ChevronDown, ChevronUp, Trash2, Calendar } from "lucide-react";
 
-export default function PostCard({ content: initialContent, isSaved, onSave, onDelete, index }: any) {
+export default function PostCard({ content: initialContent, isSaved, onSave, onDelete, index = 0 }: any) {
   const [content, setContent] = useState(initialContent);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -54,7 +54,7 @@ export default function PostCard({ content: initialContent, isSaved, onSave, onD
     <article className="bg-white border border-slate-200 rounded-[2rem] p-5 md:p-8 shadow-sm hover:shadow-xl transition-all duration-500 group overflow-hidden">
       <header className="flex justify-between items-center mb-5">
         <span className="text-[10px] font-black tracking-[0.2em] text-blue-600 bg-blue-50 px-4 py-2 rounded-full uppercase">
-          Production Draft {index + 1}
+          Production Draft {Number(index) + 1 || 1}
         </span>
 
         <div className="flex gap-2">

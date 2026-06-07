@@ -31,16 +31,41 @@ export default function Home() {
   const timerRef = useRef<any>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  const checkBypassSession = () => {
+    const isLocalSessionActive = localStorage.getItem("multiplier_session_active");
+    const localUserEmail = localStorage.getItem("multiplier_user_email");
+
+    if (isLocalSessionActive === "true" && localUserEmail) {
+      setSession({
+        user: {
+          id: "local_beta_user",
+          email: localUserEmail,
+        }
+      });
+      setUserName(localUserEmail.split("@")[0]); 
+      return true;
+    }
+    return false;
+  };
+
   useEffect(() => {
+    const bypassed = checkBypassSession();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session) fetchProfile(session.user.id);
+      if (!localStorage.getItem("multiplier_session_active")) {
+        setSession(session);
+        if (session) fetchProfile(session.user.id);
+      }
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      if (session) fetchProfile(session.user.id);
-    });
+    if (!bypassed) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) {
+          setSession(session);
+          fetchProfile(session.user.id);
+        }
+      });
+    }
 
     const savedHistory = localStorage.getItem("content_vault");
     const savedBangers = localStorage.getItem("saved_bangers");
@@ -61,6 +86,7 @@ export default function Home() {
   };
 
   const fetchProfile = async (userId: string) => {
+    if (userId === "local_beta_user") return; 
     const { data } = await supabase
       .from('profiles')
       .select('*')
@@ -77,6 +103,12 @@ export default function Home() {
   const handleSave = async () => {
     setSaveLoading(true);
     try {
+      if (session?.user?.id === "local_beta_user") {
+        setIsSaved(true);
+        setTimeout(() => setIsSaved(false), 2000);
+        return;
+      }
+
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) {
         triggerToastError("Please sign in to save your profile configuration.");
@@ -241,7 +273,7 @@ export default function Home() {
       setHistory(updatedHistory);
       localStorage.setItem("content_vault", JSON.stringify(updatedHistory));
 
-      if (session?.user?.id) {
+      if (session?.user?.id && session.user.id !== "local_beta_user") {
         await supabase.from('usage_logs').insert([
           { 
             user_id: session.user.id, 
@@ -319,7 +351,8 @@ export default function Home() {
               Your insights, multiplied.
             </p>
             <div className="w-full max-w-md bg-white p-8 rounded-[2.5rem] shadow-xl border border-slate-100">
-              <AuthModal />
+             
+              <AuthModal onSuccess={() => checkBypassSession()} />
             </div>
           </motion.div>
         </div>
@@ -533,7 +566,7 @@ export default function Home() {
                   </AnimatePresence>
                 </div>
               </div>
-              <button onClick={async () => { await supabase.auth.signOut(); window.location.reload(); }} className="w-full py-4 text-[10px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest border-t border-slate-100 mt-4">
+              <button onClick={async () => { localStorage.clear(); await supabase.auth.signOut(); window.location.reload(); }} className="w-full py-4 text-[10px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest border-t border-slate-100 mt-4">
                 Sign Out
               </button>
             </aside>
@@ -543,7 +576,3 @@ export default function Home() {
     </main>
   );
 }
-
-
-
-
